@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>SQL Generator Normalisasi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-6">
+    <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-2xl">
+        <h2 class="text-2xl font-bold mb-4 text-center text-gray-800">SQL Generator</h2>
+
+        <div id="input-container" class="space-y-4 mb-4"></div>
+
+        <div class="flex justify-between mb-4">
+            <button onclick="addInput()" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition">+ Tambah Data</button>
+            <button onclick="copyQuery()" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition">Copy Query</button>
+        </div>
+
+        <h3 class="font-semibold mb-2 text-gray-700">Generated Query:</h3>
+        <div id="query-result" class="bg-gray-200 p-4 rounded-lg min-h-[100px] whitespace-pre-wrap text-gray-700"></div>
+    </div>
+
+    <script>
+        let inputIndex = 0;
+
+        const queryTemplates = {
+            "daily": [
+                "SELECT * FROM public.dp_fn_generatetransmisibatchnormalization('{date}');",
+                "SELECT * FROM public.dp_fn_generategarduindukbatchnormalization('{date}');",
+                "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization('{date}');",
+                "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatebaselinebatchaveragedriver('{date}');",
+                "SELECT * FROM dp_fn_generategeneratorbatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatemdumtubatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatemdumtubatchbenchmark('{date}');",
+                "SELECT * FROM dp_fn_generatepilingbatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generategroundtransmisibatchnormalization('{date}');",
+            ],
+            "mdumtu": [
+                "SELECT * FROM dp_fn_generatemdumtubatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatemdumtubatchbenchmark('{date}');",
+                "SELECT * FROM dp_fn_generatebaselinebatchaveragedriver('{date}');",
+            ],
+            "pembangkit": [
+                "SELECT * FROM dp_fn_generategeneratorbatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatetransportcatalogbatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatepricecatalogbatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatepilingbatchnormalization('{date}');"
+            ],
+            "sktt": [
+                "SELECT * FROM dp_fn_generategroundtransmisibatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatetransportcatalogbatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatepricecatalogbatchnormalization('{date}');"
+            ],
+            "sutt": [
+                "SELECT * FROM dp_fn_generatetransmisibatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatetransportcatalogbatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatepricecatalogbatchnormalization('{date}');"
+            ],
+             "garduinduk": [
+                "SELECT * FROM dp_fn_generategarduindukbatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatetransportcatalogbatchnormalization('{date}');",
+                "SELECT * FROM dp_fn_generatepricecatalogbatchnormalization('{date}');"
+            ]
+        };
+
+        const inputContainer = document.getElementById('input-container');
+        const queryResult = document.getElementById('query-result');
+
+        function addInput() {
+            const inputGroup = document.createElement('div');
+            inputGroup.className = 'flex items-center space-x-4';
+
+            inputGroup.innerHTML = `
+                <select id="kategori-${inputIndex}" class="border rounded-lg p-2 flex-1">
+                    <option value="daily">Daily</option>
+                    <option value="mdumtu">MDU/MTU</option>
+                    <option value="pembangkit">Pembangkit</option>
+                    <option value="sktt">SKTT</option>
+                    <option value="sutt">SUTT</option>
+                    <option value="garduinduk">Gardu Induk</option>
+                </select>
+                <input type="date" id="tanggal-${inputIndex}" class="border rounded-lg p-2 flex-1">
+                <button onclick="removeInput(this)" class="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition">Hapus</button>
+            `;
+            inputContainer.appendChild(inputGroup);
+            inputIndex++;
+            updateQuery();
+        }
+
+        function removeInput(button) {
+            button.parentElement.remove();
+            updateQuery();
+        }
+
+        function updateQuery() {
+            const queryGroups = [];
+
+            for (let i = 0; i < inputIndex; i++) {
+                const kategoriInput = document.getElementById(`kategori-${i}`);
+                const tanggalInput = document.getElementById(`tanggal-${i}`);
+
+                if (kategoriInput && tanggalInput && tanggalInput.value) {
+                    const kategori = kategoriInput.value;
+                    const tanggal = tanggalInput.value;
+
+                    const templates = queryTemplates[kategori];
+                    const groupQueries = templates.map(template => {
+                        return template.replace('{date}', tanggal);
+                    });
+
+                    // Gabung semua query per data (kategori + tanggal)
+                    queryGroups.push(groupQueries.join('\n'));
+                }
+            }
+
+                    if (queryGroups.length > 0) {
+                        // Gabungkan semua query per data dengan jarak 1 baris
+                        const finalQuery = 'BEGIN;\n\n' + queryGroups.join('\n\n') + '\n\nCOMMIT;';
+                        queryResult.innerText = finalQuery;
+                    } else {
+                        queryResult.innerText = '';
+                    }
+                }
+
+        inputContainer.addEventListener('input', updateQuery);
+
+        function copyQuery() {
+            if (queryResult.innerText.trim() === '') {
+                alert('Tidak ada query untuk disalin!');
+                return;
+            }
+            navigator.clipboard.writeText(queryResult.innerText);
+            alert('Query berhasil dicopy!');
+        }
+    </script>
+
+</body>
+
+</html>
