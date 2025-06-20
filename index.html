@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>SQL Generator Normalisasi</title>
+    <title>SQL Generate Normalization</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
@@ -60,7 +60,7 @@
                 "SELECT * FROM dp_fn_generatetransportcatalogbatchnormalization('{date}');",
                 "SELECT * FROM dp_fn_generatepricecatalogbatchnormalization('{date}');"
             ],
-             "garduinduk": [
+            "garduinduk": [
                 "SELECT * FROM dp_fn_generategarduindukbatchnormalization('{date}');",
                 "SELECT * FROM dp_fn_generatetransportcatalogbatchnormalization('{date}');",
                 "SELECT * FROM dp_fn_generatepricecatalogbatchnormalization('{date}');"
@@ -83,7 +83,9 @@
                     <option value="sutt">SUTT</option>
                     <option value="garduinduk">Gardu Induk</option>
                 </select>
-                <input type="date" id="tanggal-${inputIndex}" class="border rounded-lg p-2 flex-1">
+                <input type="date" id="tanggal-dari-${inputIndex}" class="border rounded-lg p-2">
+                <span>-</span>
+                <input type="date" id="tanggal-sampai-${inputIndex}" class="border rounded-lg p-2">
                 <button onclick="removeInput(this)" class="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition">Hapus</button>
             `;
             inputContainer.appendChild(inputGroup);
@@ -101,30 +103,35 @@
 
             for (let i = 0; i < inputIndex; i++) {
                 const kategoriInput = document.getElementById(`kategori-${i}`);
-                const tanggalInput = document.getElementById(`tanggal-${i}`);
+                const tanggalDariInput = document.getElementById(`tanggal-dari-${i}`);
+                const tanggalSampaiInput = document.getElementById(`tanggal-sampai-${i}`);
 
-                if (kategoriInput && tanggalInput && tanggalInput.value) {
+                if (kategoriInput && tanggalDariInput && tanggalSampaiInput && tanggalDariInput.value && tanggalSampaiInput.value) {
                     const kategori = kategoriInput.value;
-                    const tanggal = tanggalInput.value;
+                    const tanggalDari = new Date(tanggalDariInput.value);
+                    const tanggalSampai = new Date(tanggalSampaiInput.value);
 
                     const templates = queryTemplates[kategori];
-                    const groupQueries = templates.map(template => {
-                        return template.replace('{date}', tanggal);
-                    });
+                    const groupQueries = [];
 
-                    // Gabung semua query per data (kategori + tanggal)
-                    queryGroups.push(groupQueries.join('\n'));
+                    for (let d = new Date(tanggalDari); d <= tanggalSampai; d.setDate(d.getDate() + 1)) {
+                        const tanggalFormatted = d.toISOString().split('T')[0];
+                        const queriesPerDate = templates.map(template => template.replace('{date}', tanggalFormatted)).join('\n');
+
+                        groupQueries.push(queriesPerDate);
+                    }
+
+                    queryGroups.push(groupQueries.join('\n\n')); 
                 }
             }
 
-                    if (queryGroups.length > 0) {
-                        // Gabungkan semua query per data dengan jarak 1 baris
-                        const finalQuery = 'BEGIN;\n\n' + queryGroups.join('\n\n') + '\n\nCOMMIT;';
-                        queryResult.innerText = finalQuery;
-                    } else {
-                        queryResult.innerText = '';
-                    }
-                }
+            if (queryGroups.length > 0) {
+                const finalQuery = 'BEGIN;\n\n' + queryGroups.join('\n\n\n') + '\n\nCOMMIT;';
+                queryResult.innerText = finalQuery;
+            } else {
+                queryResult.innerText = '';
+            }
+        }
 
         inputContainer.addEventListener('input', updateQuery);
 
@@ -143,24 +150,19 @@
                 return;
             }
 
-            // Ambil query-nya
             const queryText = queryResult.innerText;
 
-            // Bikin file baru
             const blob = new Blob([queryText], { type: 'text/sql' });
 
-            // Bikin link download
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'generated-query.sql'; // Nama file-nya
+            a.download = 'generated-query.sql';
 
-            // Simulasikan klik untuk download
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
 
-            // Hapus URL yang udah dipake
             URL.revokeObjectURL(url);
         }
     </script>
