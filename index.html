@@ -15,15 +15,18 @@
         <div class="mb-4">
             <label class="block font-semibold text-gray-700 mb-1">Nomor Tiket</label>
             <input type="text" id="ticket-number" placeholder="Masukkan nomor tiket..."
-                   class="border rounded-lg p-2 w-full" autocomplete="off">
+                class="border rounded-lg p-2 w-full" autocomplete="off">
         </div>
 
         <div id="input-container" class="space-y-4 mb-4"></div>
 
         <div class="flex justify-between mb-4">
-            <button onclick="addInput()" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition">+ Tambah Data</button>
-            <button onclick="copyQuery()" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition">Copy Query</button>
-            <button onclick="exportSQL()" class="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition">Export SQL</button>
+            <button onclick="addInput()"
+                class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition">+ Tambah Data</button>
+            <button onclick="copyQuery()"
+                class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition">Copy Query</button>
+            <button onclick="exportSQL()"
+                class="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition">Export SQL</button>
         </div>
 
         <h3 class="font-semibold mb-2 text-gray-700">Generated Query:</h3>
@@ -45,67 +48,108 @@
 
         const queryTemplates = {
             "daily": [
-                "SELECT * FROM public.dp_fn_generatetransmisibatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generategarduindukbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatebaselinebatchaveragedriver('{date}');",
-                "SELECT * FROM public.dp_fn_generategeneratorbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatemdumtubatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatemdumtubatchbenchmark('{date}');",
-                "SELECT * FROM public.dp_fn_generatepilingbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generategroundtransmisibatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatetransportbatch('{date}');",
+                "SELECT * FROM public.dp_fn_generatetransmisibatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generategarduindukbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatebaselinebatchaveragedriver({date});",
+                "SELECT * FROM public.dp_fn_generategeneratorbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatemdumtubatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatemdumtubatchbenchmark({date});",
+                "SELECT * FROM public.dp_fn_generatepilingbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generategroundtransmisibatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatetransportbatch({date});",
             ],
             "mdumtu": [
-                "SELECT * FROM public.dp_fn_generatemdumtubatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatemdumtubatchbenchmark('{date}');",
-                "SELECT * FROM public.dp_fn_generatebaselinebatchaveragedriver('{date}');",
+                "SELECT * FROM public.dp_fn_generatemdumtubatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatemdumtubatchbenchmark({date});",
+                "SELECT * FROM public.dp_fn_generatebaselinebatchaveragedriver({date});",
             ],
             "pembangkit": [
-                "SELECT * FROM public.dp_fn_generategeneratorbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatepilingbatchnormalization('{date}');"
+                "SELECT * FROM public.dp_fn_generategeneratorbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatepilingbatchnormalization({date});"
             ],
             "sktt": [
-                "SELECT * FROM public.dp_fn_generategroundtransmisibatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization('{date}');"
+                "SELECT * FROM public.dp_fn_generategroundtransmisibatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization({date});"
             ],
             "sutt": [
-                "SELECT * FROM public.dp_fn_generatetransmisibatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization('{date}');"
+                "SELECT * FROM public.dp_fn_generatetransmisibatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization({date});"
             ],
             "garduinduk": [
-                "SELECT * FROM public.dp_fn_generategarduindukbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization('{date}');",
-                "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization('{date}');"
+                "SELECT * FROM public.dp_fn_generategarduindukbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization({date});",
+                "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization({date});"
             ]
         };
 
         const inputContainer = document.getElementById('input-container');
         const queryResult = document.getElementById('query-result');
 
+
+
         function addInput() {
             const inputGroup = document.createElement('div');
             inputGroup.className = 'flex items-center space-x-4';
 
             inputGroup.innerHTML = `
-                <select id="kategori-${inputIndex}" class="border rounded-lg p-2 flex-1">
-                    <option value="daily">Daily</option>
-                    <option value="mdumtu">MDU/MTU</option>
-                    <option value="pembangkit">Pembangkit</option>
-                    <option value="sktt">SKTT</option>
-                    <option value="sutt">SUTT</option>
-                    <option value="garduinduk">Gardu Induk</option>
-                </select>
-                <input type="date" id="tanggal-dari-${inputIndex}" class="border rounded-lg p-2">
-                <span>-</span>
-                <input type="date" id="tanggal-sampai-${inputIndex}" class="border rounded-lg p-2">
-                <button onclick="removeInput(this)" class="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition">Hapus</button>
+                            <select id="kategori-${inputIndex}" class="border rounded-lg p-2 flex-1"></select>
+                            <input type="date" id="tanggal-dari-${inputIndex}" class="border rounded-lg p-2">
+                            <span>-</span>
+                            <input type="date" id="tanggal-sampai-${inputIndex}" class="border rounded-lg p-2" disabled>
+                            <button onclick="removeInput(this)" class="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition">Hapus</button>
             `;
+
+            const select = inputGroup.querySelector(`#kategori-${inputIndex}`);
+            const tanggalDariInput = inputGroup.querySelector(`#tanggal-dari-${inputIndex}`);
+            const tanggalSampaiInput = inputGroup.querySelector(`#tanggal-sampai-${inputIndex}`);
+
+            // Populate kategori options
+            for (const key in queryTemplates) {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = categoryNameMap[key] || key;
+                select.appendChild(option);
+            }
+
+            // Event listener untuk tanggal dari
+            tanggalDariInput.addEventListener('change', function () {
+                if (this.value) {
+                    // Enable tanggal sampai
+                    tanggalSampaiInput.disabled = false;
+
+                    // Set min date untuk tanggal sampai = tanggal dari
+                    tanggalSampaiInput.min = this.value;
+
+                    // Reset tanggal sampai jika nilainya sebelum tanggal dari
+                    if (tanggalSampaiInput.value && tanggalSampaiInput.value < this.value) {
+                        tanggalSampaiInput.value = '';
+                    }
+                } else {
+                    // Jika tanggal dari dihapus, disable tanggal sampai
+                    tanggalSampaiInput.disabled = true;
+                    tanggalSampaiInput.value = '';
+                    tanggalSampaiInput.min = '';
+                }
+
+                updateQuery();
+            });
+
+            // Event listener untuk tanggal sampai
+            tanggalSampaiInput.addEventListener('change', function () {
+                updateQuery();
+            });
+
+            // Event listener untuk kategori
+            select.addEventListener('change', function () {
+                updateQuery();
+            });
+
             inputContainer.appendChild(inputGroup);
             inputIndex++;
             updateQuery();
@@ -134,12 +178,16 @@
 
                     for (let d = new Date(tanggalDari); d <= tanggalSampai; d.setDate(d.getDate() + 1)) {
                         const tanggalFormatted = d.toISOString().split('T')[0];
-                        const queriesPerDate = templates.map(template => template.replace('{date}', tanggalFormatted)).join('\n');
+                        const queriesPerDate = templates.map(template => template.replace(`{date}`, `'${tanggalFormatted}'`)).join('\n');
 
                         groupQueries.push(queriesPerDate);
                     }
 
-                    queryGroups.push(groupQueries.join('\n\n')); 
+                    // empty template
+                    const emptyQuery = templates.map(template => { return template.replace(/\{date\}/g, ""); }).join('\n');
+
+                    const notes = `\n\n-- Query Default untuk ${kategori} akan mengambil -2 hari dari tanggal eksekusi query.`
+                    queryGroups.push(groupQueries.join('\n\n') + notes + '\n' + emptyQuery);
                 }
             }
 
@@ -175,16 +223,40 @@
                 return;
             }
 
+            allCategoryEl = [];
+            catName = [];
+            catKey = [];
             const firstCategoryEl = document.getElementById("kategori-0");
+
             if (!firstCategoryEl) {
                 alert('Kategori belum diisi!');
                 return;
+            } else if (inputIndex > 1) {
+                for (let i = 0; i < inputIndex; i++) {
+                    const catElement = document.getElementById(`kategori-${i}`);
+                    if (catElement) {
+                        const cat = catElement.value.trim();
+                        if (cat) {
+                            allCategoryEl.push(cat);
+                        }
+                    }
+                }
+
+                catName = allCategoryEl.map(cat => categoryNameMap[cat] || cat);
+                catKey = [...allCategoryEl];
+            } else {
+                let categoryKey = firstCategoryEl.value.trim();
+                let categoryName = categoryNameMap[categoryKey] || categoryKey;
+                catName = [categoryName];
+                catKey = [categoryKey];
             }
 
-            let categoryKey = firstCategoryEl.value;
-            let categoryName = categoryNameMap[categoryKey] || categoryKey;
+            const categoryString = catName.length > 1 ?
+                catName.join('_') :
+                catName[0];
 
-            const filename = `Batch Job Baseline_${categoryName}_${ticket}.sql`;
+            const filename = `Batch Job Baseline_${categoryString}_${ticket}.sql`;
+            console.log("Generated Filename:", filename);
 
             const queryText = queryResult.innerText;
 
