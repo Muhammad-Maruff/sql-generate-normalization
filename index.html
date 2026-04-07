@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <title>SQL Generate Normalization</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 
 <body class="bg-gray-100 min-h-screen flex items-center justify-center p-6">
@@ -18,7 +19,32 @@
                 class="border rounded-lg p-2 w-full" autocomplete="off">
         </div>
 
-        <div id="input-container" class="space-y-4 mb-4"></div>
+        <div class="mb-4">
+            <label class="block font-semibold text-gray-700 mb-1">Mode Input</label>
+            <select id="input-mode" class="border rounded-lg p-2 w-full">
+                <option value="manual">Manual</option>
+                <option value="excel">Upload Excel</option>
+            </select>
+        </div>
+
+        <div id="manual-section">
+            <div id="input-container" class="space-y-4 mb-4"></div>
+        </div>
+
+        <div id="excel-section" class="hidden mb-4 space-y-3">
+            <div>
+                <label class="block font-semibold text-gray-700 mb-1">Kategori untuk semua tanggal Excel</label>
+                <select id="excel-kategori" class="border rounded-lg p-2 w-full"></select>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button id="download-template-btn"
+                    class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition">Download Template Excel</button>
+                <input id="excel-file" type="file" accept=".xlsx,.xls"
+                    class="border rounded-lg p-2 flex-1 min-w-[220px] bg-white">
+            </div>
+            <p class="text-sm text-gray-600">Template minimal: 1 kolom header <code>tanggal</code>. Contoh isi: 2026-04-07</p>
+            <div id="excel-status" class="text-sm text-gray-700"></div>
+        </div>
 
         <div class="flex justify-between mb-4">
             <button onclick="addInput()"
@@ -35,6 +61,7 @@
 
     <script>
         let inputIndex = 0;
+        let excelRows = [];
 
         // Mapping kategori untuk nama file (rapi)
         const categoryNameMap = {
@@ -89,8 +116,110 @@
         };
 
         const inputContainer = document.getElementById('input-container');
+        const inputMode = document.getElementById('input-mode');
+        const manualSection = document.getElementById('manual-section');
+        const excelSection = document.getElementById('excel-section');
+        const excelKategori = document.getElementById('excel-kategori');
+        const excelFileInput = document.getElementById('excel-file');
+        const excelStatus = document.getElementById('excel-status');
+        const downloadTemplateBtn = document.getElementById('download-template-btn');
         const queryResult = document.getElementById('query-result');
 
+        function formatDateLocal(dateObj) {
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function normalizeExcelDate(value) {
+            if (value === null || value === undefined || value === '') return null;
+
+            if (value instanceof Date && !Number.isNaN(value.getTime())) {
+                return formatDateLocal(value);
+            }
+
+            if (typeof value === 'number') {
+                const parsed = XLSX.SSF.parse_date_code(value);
+                if (!parsed) return null;
+                const dateObj = new Date(parsed.y, parsed.m - 1, parsed.d);
+                if (Number.isNaN(dateObj.getTime())) return null;
+                return formatDateLocal(dateObj);
+            }
+
+            if (typeof value === 'string') {
+                const clean = value.trim();
+                if (!clean) return null;
+
+                const isoDateMatch = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+                if (isoDateMatch) {
+                    const yyyy = Number(isoDateMatch[1]);
+                    const mm = Number(isoDateMatch[2]);
+                    const dd = Number(isoDateMatch[3]);
+                    const dateObj = new Date(yyyy, mm - 1, dd);
+                    if (!Number.isNaN(dateObj.getTime())) {
+                        return formatDateLocal(dateObj);
+                    }
+                }
+
+                // dd/mm/yyyy or dd-mm-yyyy
+                const slashMatch = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+                if (slashMatch) {
+                    const dd = Number(slashMatch[1]);
+                    const mm = Number(slashMatch[2]);
+                    const yyyy = Number(slashMatch[3]);
+                    const dateObj = new Date(yyyy, mm - 1, dd);
+                    if (!Number.isNaN(dateObj.getTime())) {
+                        return formatDateLocal(dateObj);
+                    }
+                }
+
+                // Fallback for textual date values, e.g. "5 March 2026"
+                const direct = new Date(clean);
+                if (!Number.isNaN(direct.getTime())) {
+                    return formatDateLocal(direct);
+                }
+            }
+
+            return null;
+        }
+
+        function buildQueryForCategoryDates(kategori, dateList) {
+            const templates = queryTemplates[kategori] || [];
+            const groupQueries = [];
+
+            dateList.forEach((tanggalFormatted) => {
+                const queriesPerDate = templates
+                    .map(template => template.replace(`{date}`, `'${tanggalFormatted}'`))
+                    .join('\n');
+                groupQueries.push(queriesPerDate);
+            });
+
+            const emptyQuery = templates
+                .map(template => template.replace(/\{date\}/g, ""))
+                .join('\n');
+
+            const notes = `\n\n-- Query Default untuk ${kategori} akan mengambil -2 hari dari tanggal eksekusi query.`;
+            return groupQueries.join('\n\n') + notes + '\n' + emptyQuery;
+        }
+
+        function populateCategorySelect(selectEl) {
+            selectEl.innerHTML = '';
+            for (const key in queryTemplates) {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = categoryNameMap[key] || key;
+                selectEl.appendChild(option);
+            }
+        }
+
+        function setModeUI() {
+            const mode = inputMode.value;
+            const isManual = mode === 'manual';
+            manualSection.classList.toggle('hidden', !isManual);
+            excelSection.classList.toggle('hidden', isManual);
+            updateQuery();
+        }
 
 
         function addInput() {
@@ -163,31 +292,30 @@
         function updateQuery() {
             const queryGroups = [];
 
-            for (let i = 0; i < inputIndex; i++) {
-                const kategoriInput = document.getElementById(`kategori-${i}`);
-                const tanggalDariInput = document.getElementById(`tanggal-dari-${i}`);
-                const tanggalSampaiInput = document.getElementById(`tanggal-sampai-${i}`);
+            if (inputMode.value === 'excel') {
+                if (excelRows.length > 0 && excelKategori.value) {
+                    queryGroups.push(buildQueryForCategoryDates(excelKategori.value, excelRows));
+                }
+            } else {
+                for (let i = 0; i < inputIndex; i++) {
+                    const kategoriInput = document.getElementById(`kategori-${i}`);
+                    const tanggalDariInput = document.getElementById(`tanggal-dari-${i}`);
+                    const tanggalSampaiInput = document.getElementById(`tanggal-sampai-${i}`);
 
-                if (kategoriInput && tanggalDariInput && tanggalSampaiInput && tanggalDariInput.value && tanggalSampaiInput.value) {
-                    const kategori = kategoriInput.value;
-                    const tanggalDari = new Date(tanggalDariInput.value);
-                    const tanggalSampai = new Date(tanggalSampaiInput.value);
+                    if (kategoriInput && tanggalDariInput && tanggalSampaiInput && tanggalDariInput.value && tanggalSampaiInput.value) {
+                        const kategori = kategoriInput.value;
+                        const dariParts = tanggalDariInput.value.split('-').map(Number);
+                        const sampaiParts = tanggalSampaiInput.value.split('-').map(Number);
+                        const tanggalDari = new Date(dariParts[0], dariParts[1] - 1, dariParts[2]);
+                        const tanggalSampai = new Date(sampaiParts[0], sampaiParts[1] - 1, sampaiParts[2]);
+                        const dateList = [];
 
-                    const templates = queryTemplates[kategori];
-                    const groupQueries = [];
+                        for (let d = new Date(tanggalDari); d <= tanggalSampai; d.setDate(d.getDate() + 1)) {
+                            dateList.push(formatDateLocal(d));
+                        }
 
-                    for (let d = new Date(tanggalDari); d <= tanggalSampai; d.setDate(d.getDate() + 1)) {
-                        const tanggalFormatted = d.toISOString().split('T')[0];
-                        const queriesPerDate = templates.map(template => template.replace(`{date}`, `'${tanggalFormatted}'`)).join('\n');
-
-                        groupQueries.push(queriesPerDate);
+                        queryGroups.push(buildQueryForCategoryDates(kategori, dateList));
                     }
-
-                    // empty template
-                    const emptyQuery = templates.map(template => { return template.replace(/\{date\}/g, ""); }).join('\n');
-
-                    const notes = `\n\n-- Query Default untuk ${kategori} akan mengambil -2 hari dari tanggal eksekusi query.`
-                    queryGroups.push(groupQueries.join('\n\n') + notes + '\n' + emptyQuery);
                 }
             }
 
@@ -200,6 +328,85 @@
         }
 
         inputContainer.addEventListener('input', updateQuery);
+        inputMode.addEventListener('change', setModeUI);
+        excelKategori.addEventListener('change', updateQuery);
+
+        excelFileInput.addEventListener('change', async function (event) {
+            const file = event.target.files && event.target.files[0];
+            excelRows = [];
+            excelStatus.textContent = '';
+            updateQuery();
+
+            if (!file) return;
+
+            try {
+                const buffer = await file.arrayBuffer();
+                const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
+                const firstSheetName = workbook.SheetNames[0];
+                if (!firstSheetName) {
+                    excelStatus.textContent = 'File tidak memiliki sheet.';
+                    return;
+                }
+
+                const sheet = workbook.Sheets[firstSheetName];
+                const rows = XLSX.utils.sheet_to_json(sheet, {
+                    header: 1,
+                    raw: true,
+                    defval: ''
+                });
+
+                if (!rows.length) {
+                    excelStatus.textContent = 'Sheet kosong.';
+                    return;
+                }
+
+                const headerRow = (rows[0] || []).map(h => String(h).trim().toLowerCase());
+                const dateColIndex = headerRow.findIndex(h => h === 'tanggal');
+                if (dateColIndex === -1) {
+                    excelStatus.textContent = 'Header wajib punya kolom "tanggal".';
+                    return;
+                }
+
+                const invalidRows = [];
+                const validDates = [];
+
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    const rawDateValue = row[dateColIndex];
+                    if (rawDateValue === '' || rawDateValue === null || rawDateValue === undefined) {
+                        continue;
+                    }
+
+                    const normalized = normalizeExcelDate(rawDateValue);
+                    if (normalized) {
+                        validDates.push(normalized);
+                    } else {
+                        invalidRows.push(i + 1);
+                    }
+                }
+
+                excelRows = validDates;
+                const validCount = validDates.length;
+                const invalidCount = invalidRows.length;
+                excelStatus.textContent = `Upload berhasil. Valid: ${validCount}, Invalid: ${invalidCount}${invalidCount ? ` (baris: ${invalidRows.join(', ')})` : ''}`;
+                updateQuery();
+            } catch (err) {
+                excelStatus.textContent = `Gagal membaca file Excel: ${err.message || err}`;
+                excelRows = [];
+                updateQuery();
+            }
+        });
+
+        downloadTemplateBtn.addEventListener('click', function () {
+            const ws = XLSX.utils.aoa_to_sheet([
+                ['tanggal'],
+                ['2026-04-07'],
+                ['2026-04-08']
+            ]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Template');
+            XLSX.writeFile(wb, 'template_tanggal_sql_generator.xlsx');
+        });
 
         function copyQuery() {
             if (queryResult.innerText.trim() === '') {
@@ -226,29 +433,40 @@
             allCategoryEl = [];
             catName = [];
             catKey = [];
-            const firstCategoryEl = document.getElementById("kategori-0");
 
-            if (!firstCategoryEl) {
-                alert('Kategori belum diisi!');
-                return;
-            } else if (inputIndex > 1) {
-                for (let i = 0; i < inputIndex; i++) {
-                    const catElement = document.getElementById(`kategori-${i}`);
-                    if (catElement) {
-                        const cat = catElement.value.trim();
-                        if (cat) {
-                            allCategoryEl.push(cat);
+            if (inputMode.value === 'excel') {
+                if (!excelKategori.value) {
+                    alert('Kategori belum dipilih!');
+                    return;
+                }
+                allCategoryEl = [excelKategori.value];
+                catName = [categoryNameMap[excelKategori.value] || excelKategori.value];
+                catKey = [excelKategori.value];
+            } else {
+                const firstCategoryEl = document.getElementById("kategori-0");
+
+                if (!firstCategoryEl) {
+                    alert('Kategori belum diisi!');
+                    return;
+                } else if (inputIndex > 1) {
+                    for (let i = 0; i < inputIndex; i++) {
+                        const catElement = document.getElementById(`kategori-${i}`);
+                        if (catElement) {
+                            const cat = catElement.value.trim();
+                            if (cat) {
+                                allCategoryEl.push(cat);
+                            }
                         }
                     }
-                }
 
-                catName = allCategoryEl.map(cat => categoryNameMap[cat] || cat);
-                catKey = [...allCategoryEl];
-            } else {
-                let categoryKey = firstCategoryEl.value.trim();
-                let categoryName = categoryNameMap[categoryKey] || categoryKey;
-                catName = [categoryName];
-                catKey = [categoryKey];
+                    catName = allCategoryEl.map(cat => categoryNameMap[cat] || cat);
+                    catKey = [...allCategoryEl];
+                } else {
+                    let categoryKey = firstCategoryEl.value.trim();
+                    let categoryName = categoryNameMap[categoryKey] || categoryKey;
+                    catName = [categoryName];
+                    catKey = [categoryKey];
+                }
             }
 
             const categoryString = catName.length > 1 ?
@@ -273,6 +491,10 @@
 
             URL.revokeObjectURL(url);
         }
+
+        populateCategorySelect(excelKategori);
+        setModeUI();
+        addInput();
     </script>
 
 </body>
