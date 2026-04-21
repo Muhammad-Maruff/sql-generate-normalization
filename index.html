@@ -62,11 +62,25 @@
 
         <h3 class="font-semibold mb-2 text-gray-700">Generated Query:</h3>
         <div id="query-result" class="bg-gray-200 p-4 rounded-lg min-h-[100px] whitespace-pre-wrap text-gray-700"></div>
+
+        <div class="mt-6 border-t pt-4">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold text-gray-700">Riwayat Generate</h3>
+                <button id="clear-history-btn"
+                    class="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition text-sm">Clear All</button>
+            </div>
+            <p id="history-empty" class="text-sm text-gray-500">Belum ada riwayat.</p>
+            <div id="history-list" class="space-y-2"></div>
+        </div>
     </div>
 
     <script>
         let inputIndex = 0;
         let excelRows = [];
+        const HISTORY_STORAGE_KEY = 'sql-generate-normalization-history-v1';
+        const HISTORY_MAX_ITEMS = 20;
+        let lastSavedSignature = '';
+        let isRestoringFromHistory = false;
 
         // Mapping kategori untuk nama file (rapi)
         const categoryNameMap = {
@@ -130,6 +144,9 @@
         const downloadTemplateBtn = document.getElementById('download-template-btn');
         const queryResult = document.getElementById('query-result');
         const ticketNumberInput = document.getElementById('ticket-number');
+        const historyList = document.getElementById('history-list');
+        const historyEmpty = document.getElementById('history-empty');
+        const clearHistoryBtn = document.getElementById('clear-history-btn');
 
         function formatDateLocal(dateObj) {
             const y = dateObj.getFullYear();
@@ -207,6 +224,201 @@
             ];
             if (ticket) lines.push(`-- ticket: ${ticket}`);
             return lines.join('\n');
+        }
+
+        function getHistoryItems() {
+            try {
+                const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+                if (!raw) return [];
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (err) {
+                console.warn('Gagal parse history localStorage:', err);
+                return [];
+            }
+        }
+
+        function setHistoryItems(items) {
+            localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(items));
+        }
+
+        function formatHistoryTime(isoString) {
+            const dateObj = new Date(isoString);
+            if (Number.isNaN(dateObj.getTime())) return '-';
+            return dateObj.toLocaleString('id-ID');
+        }
+
+        function renderHistoryList() {
+            const items = getHistoryItems();
+            historyList.innerHTML = '';
+            historyEmpty.classList.toggle('hidden', items.length > 0);
+
+            items.forEach((item) => {
+                const wrap = document.createElement('div');
+                wrap.className = 'bg-gray-50 border border-gray-200 rounded-lg p-3';
+
+                const ticketText = item.ticket ? `Ticket: ${item.ticket}` : 'Ticket: -';
+                const modeText = item.mode === 'excel' ? 'Excel' : 'Manual';
+                const categoryText = (item.categories && item.categories.length)
+                    ? item.categories.map((cat) => categoryNameMap[cat] || cat).join(', ')
+                    : '-';
+
+                wrap.innerHTML = `
+                    <div class="text-sm text-gray-700 font-semibold">${ticketText}</div>
+                    <div class="text-xs text-gray-600">Mode: ${modeText} | Kategori: ${categoryText}</div>
+                    <div class="text-xs text-gray-500 mt-1">${formatHistoryTime(item.createdAt)}</div>
+                    <div class="mt-2 flex gap-2">
+                        <button data-action="load" data-id="${item.id}" class="bg-blue-500 text-white px-3 py-1 rounded-lg hover:bg-blue-600 transition text-xs">Load</button>
+                        <button data-action="delete" data-id="${item.id}" class="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition text-xs">Hapus</button>
+                    </div>
+                `;
+                historyList.appendChild(wrap);
+            });
+        }
+
+        function collectManualRows() {
+            const rows = [];
+            for (let i = 0; i < inputIndex; i++) {
+                const metodeInput = document.getElementById(`metode-${i}`);
+                const kategoriInput = document.getElementById(`kategori-${i}`);
+                const tanggalDariInput = document.getElementById(`tanggal-dari-${i}`);
+                const tanggalSampaiInput = document.getElementById(`tanggal-sampai-${i}`);
+                if (!metodeInput || !kategoriInput || !tanggalDariInput || !tanggalSampaiInput) continue;
+
+                rows.push({
+                    metode: metodeInput.value || '',
+                    kategori: kategoriInput.value || '',
+                    tanggalDari: tanggalDariInput.value || '',
+                    tanggalSampai: tanggalSampaiInput.value || ''
+                });
+            }
+            return rows;
+        }
+
+        function getUniqueCategoriesFromState(mode, manualRows, excelCategory) {
+            if (mode === 'excel') {
+                return excelCategory ? [excelCategory] : [];
+            }
+            const unique = new Set();
+            manualRows.forEach((row) => {
+                if (row.kategori) unique.add(row.kategori);
+            });
+            return Array.from(unique);
+        }
+
+        function buildSnapshot() {
+            const mode = inputMode.value;
+            const manualRows = collectManualRows();
+            const categories = getUniqueCategoriesFromState(mode, manualRows, excelKategori.value);
+            return {
+                ticket: ticketNumberInput.value.trim(),
+                mode,
+                excelKategori: excelKategori.value || '',
+                excelRows: [...excelRows],
+                manualRows,
+                query: queryResult.innerText,
+                categories
+            };
+        }
+
+        function buildHistorySignature(snapshot) {
+            return JSON.stringify({
+                mode: snapshot.mode,
+                excelKategori: snapshot.excelKategori,
+                excelRows: snapshot.excelRows,
+                manualRows: snapshot.manualRows,
+                categories: snapshot.categories
+            });
+        }
+
+        function saveCurrentToHistory() {
+            if (isRestoringFromHistory) return;
+            if (!queryResult.innerText.trim()) return;
+
+            const snapshot = buildSnapshot();
+            const signature = buildHistorySignature(snapshot);
+            if (signature === lastSavedSignature) return;
+
+            const items = getHistoryItems();
+            const filtered = items.filter((item) => item.signature !== signature);
+
+            filtered.unshift({
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                createdAt: new Date().toISOString(),
+                signature,
+                ...snapshot
+            });
+
+            const trimmed = filtered.slice(0, HISTORY_MAX_ITEMS);
+            setHistoryItems(trimmed);
+            lastSavedSignature = signature;
+            renderHistoryList();
+        }
+
+        function clearAllInputs() {
+            inputContainer.innerHTML = '';
+            inputIndex = 0;
+        }
+
+        function applyManualRows(rows) {
+            clearAllInputs();
+            const sourceRows = rows && rows.length ? rows : [{}];
+
+            sourceRows.forEach((row) => {
+                addInput();
+                const idx = inputIndex - 1;
+                const metodeInput = document.getElementById(`metode-${idx}`);
+                const kategoriInput = document.getElementById(`kategori-${idx}`);
+                const tanggalDariInput = document.getElementById(`tanggal-dari-${idx}`);
+                const tanggalSampaiInput = document.getElementById(`tanggal-sampai-${idx}`);
+
+                if (metodeInput && row.metode) metodeInput.value = row.metode;
+                if (kategoriInput && row.kategori) kategoriInput.value = row.kategori;
+                if (metodeInput) metodeInput.dispatchEvent(new Event('change'));
+                if (tanggalDariInput && row.tanggalDari) {
+                    tanggalDariInput.value = row.tanggalDari;
+                    tanggalDariInput.dispatchEvent(new Event('change'));
+                }
+                if (tanggalSampaiInput && row.tanggalSampai && !tanggalSampaiInput.disabled) {
+                    tanggalSampaiInput.value = row.tanggalSampai;
+                    tanggalSampaiInput.dispatchEvent(new Event('change'));
+                }
+            });
+        }
+
+        function loadHistoryById(id) {
+            const items = getHistoryItems();
+            const selected = items.find((item) => item.id === id);
+            if (!selected) return;
+
+            isRestoringFromHistory = true;
+            ticketNumberInput.value = selected.ticket || '';
+            inputMode.value = selected.mode === 'excel' ? 'excel' : 'manual';
+            setModeUI();
+
+            excelKategori.value = selected.excelKategori || '';
+            excelRows = Array.isArray(selected.excelRows) ? [...selected.excelRows] : [];
+            excelStatus.textContent = selected.mode === 'excel'
+                ? `Data riwayat dimuat. Jumlah tanggal: ${excelRows.length}`
+                : '';
+
+            if (selected.mode === 'manual') {
+                applyManualRows(Array.isArray(selected.manualRows) ? selected.manualRows : []);
+            } else {
+                clearAllInputs();
+                addInput();
+            }
+
+            updateQuery();
+            lastSavedSignature = selected.signature || JSON.stringify(buildSnapshot());
+            isRestoringFromHistory = false;
+        }
+
+        function deleteHistoryById(id) {
+            const items = getHistoryItems();
+            const next = items.filter((item) => item.id !== id);
+            setHistoryItems(next);
+            renderHistoryList();
         }
 
         function normalizeExcelDate(value) {
@@ -515,6 +727,27 @@
         ticketNumberInput.addEventListener('input', updateQuery);
         inputMode.addEventListener('change', setModeUI);
         excelKategori.addEventListener('change', updateQuery);
+        clearHistoryBtn.addEventListener('click', function () {
+            const ok = confirm('Hapus semua riwayat generate?');
+            if (!ok) return;
+            setHistoryItems([]);
+            renderHistoryList();
+        });
+
+        historyList.addEventListener('click', function (event) {
+            const target = event.target.closest('button[data-action]');
+            if (!target) return;
+
+            const action = target.getAttribute('data-action');
+            const id = target.getAttribute('data-id');
+            if (!id) return;
+
+            if (action === 'load') {
+                loadHistoryById(id);
+            } else if (action === 'delete') {
+                deleteHistoryById(id);
+            }
+        });
 
         excelFileInput.addEventListener('change', async function (event) {
             const file = event.target.files && event.target.files[0];
@@ -593,13 +826,18 @@
             XLSX.writeFile(wb, 'template_tanggal_sql_generator.xlsx');
         });
 
-        function copyQuery() {
+        async function copyQuery() {
             if (queryResult.innerText.trim() === '') {
                 alert('Tidak ada query untuk disalin!');
                 return;
             }
-            navigator.clipboard.writeText(queryResult.innerText);
-            alert('Query berhasil dicopy!');
+            try {
+                await navigator.clipboard.writeText(queryResult.innerText);
+                saveCurrentToHistory();
+                alert('Query berhasil dicopy!');
+            } catch (err) {
+                alert(`Gagal copy query: ${err.message || err}`);
+            }
         }
 
         function exportSQL() {
@@ -675,9 +913,11 @@
             document.body.removeChild(a);
 
             URL.revokeObjectURL(url);
+            saveCurrentToHistory();
         }
 
         populateCategorySelect(excelKategori);
+        renderHistoryList();
         setModeUI();
         addInput();
         updateQuery();
