@@ -9,7 +9,7 @@
 </head>
 
 <body class="bg-gray-100 min-h-screen flex items-center justify-center p-6">
-    <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-2xl">
+    <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-3xl">
         <h2 class="text-2xl font-bold mb-4 text-center text-gray-800">SQL Generator</h2>
 
         <!-- Nomor Tiket -->
@@ -25,6 +25,11 @@
                 <option value="manual">Manual</option>
                 <option value="excel">Upload Excel</option>
             </select>
+        </div>
+
+        <div class="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
+            <p class="text-sm font-semibold text-gray-700">Metode tanggal</p>
+            <p class="text-xs text-gray-600">Manual: metode dipilih per baris data (bisa campur dalam satu generate). Excel: metode dipilih satu kali untuk semua tanggal file.</p>
         </div>
 
         <div id="manual-section">
@@ -124,12 +129,84 @@
         const excelStatus = document.getElementById('excel-status');
         const downloadTemplateBtn = document.getElementById('download-template-btn');
         const queryResult = document.getElementById('query-result');
+        const ticketNumberInput = document.getElementById('ticket-number');
 
         function formatDateLocal(dateObj) {
             const y = dateObj.getFullYear();
             const m = String(dateObj.getMonth() + 1).padStart(2, '0');
             const d = String(dateObj.getDate()).padStart(2, '0');
             return `${y}-${m}-${d}`;
+        }
+
+        function parseYmdToLocalDate(ymd) {
+            const parts = String(ymd).split('-').map(Number);
+            if (parts.length !== 3 || parts.some(n => Number.isNaN(n))) return null;
+            const d = new Date(parts[0], parts[1] - 1, parts[2]);
+            return Number.isNaN(d.getTime()) ? null : d;
+        }
+
+        function expandInclusiveDateRange(ymdDari, ymdSampai) {
+            const start = parseYmdToLocalDate(ymdDari);
+            const end = parseYmdToLocalDate(ymdSampai);
+            if (!start || !end || start > end) return [];
+
+            const out = [];
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                out.push(formatDateLocal(d));
+            }
+            return out;
+        }
+
+        function addDaysYmd(ymd, deltaDays) {
+            const base = parseYmdToLocalDate(ymd);
+            if (!base) return null;
+            base.setDate(base.getDate() + deltaDays);
+            return formatDateLocal(base);
+        }
+
+        function expandTransactionNeighborhoods(ymdList) {
+            const out = [];
+            ymdList.forEach((ymd) => {
+                const tMinus = addDaysYmd(ymd, -1);
+                const tPlus = addDaysYmd(ymd, 1);
+                if (tMinus) out.push(tMinus);
+                out.push(ymd);
+                if (tPlus) out.push(tPlus);
+            });
+            return out;
+        }
+
+        function sortDedupYmd(list) {
+            const uniq = Array.from(new Set(list.filter(Boolean)));
+            uniq.sort();
+            return uniq;
+        }
+
+        function mergeDatesForMethodFromYmdList(method, ymdList) {
+            if (method === 'excel_pure') {
+                return ymdList.filter(Boolean);
+            }
+            if (method === 'transaksi_baseline') {
+                return sortDedupYmd(expandTransactionNeighborhoods(ymdList));
+            }
+            return sortDedupYmd(ymdList);
+        }
+
+        function mergeDatesForMethodFromRanges(method, rangePairs) {
+            const raw = [];
+            rangePairs.forEach(([dari, sampai]) => {
+                raw.push(...expandInclusiveDateRange(dari, sampai));
+            });
+            return mergeDatesForMethodFromYmdList(method, raw);
+        }
+
+        function buildSqlHeaderMeta() {
+            const ticket = ticketNumberInput.value.trim();
+            const lines = [
+                '-- SQL Generate Normalization',
+            ];
+            if (ticket) lines.push(`-- ticket: ${ticket}`);
+            return lines.join('\n');
         }
 
         function normalizeExcelDate(value) {
@@ -184,7 +261,7 @@
             return null;
         }
 
-        function buildQueryForCategoryDates(kategori, dateList) {
+        function buildDatedQueriesForCategory(kategori, dateList) {
             const templates = queryTemplates[kategori] || [];
             const groupQueries = [];
 
@@ -194,15 +271,16 @@
                     .join('\n');
                 groupQueries.push(queriesPerDate);
             });
-
-            const emptyQuery = templates
-                .map(template => template.replace(/\{date\}/g, ""))
-                .join('\n');
-
-            const notes = `\n\n-- Query Default untuk ${kategori} akan mengambil -2 hari dari tanggal eksekusi query.`;
-            return groupQueries.join('\n\n') + notes + '\n' + emptyQuery;
+            return groupQueries.join('\n\n');
         }
 
+        function buildDefaultNoDateBlockForCategory(kategori) {
+            const templates = queryTemplates[kategori] || [];
+            return templates
+                .map(template => template.replace(/\{date\}/g, ""))
+                .join('\n');
+        }
+        
         function populateCategorySelect(selectEl) {
             selectEl.innerHTML = '';
             for (const key in queryTemplates) {
@@ -224,19 +302,47 @@
 
         function addInput() {
             const inputGroup = document.createElement('div');
-            inputGroup.className = 'flex items-center space-x-4';
+            inputGroup.className = 'input-row grid grid-cols-1 lg:grid-cols-[1fr_1fr_auto_auto_auto] gap-3 items-center';
 
             inputGroup.innerHTML = `
-                            <select id="kategori-${inputIndex}" class="border rounded-lg p-2 flex-1"></select>
-                            <input type="date" id="tanggal-dari-${inputIndex}" class="border rounded-lg p-2">
-                            <span>-</span>
-                            <input type="date" id="tanggal-sampai-${inputIndex}" class="border rounded-lg p-2" disabled>
-                            <button onclick="removeInput(this)" class="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition">Hapus</button>
+                            <div class="space-y-1">
+                                <label class="block text-xs font-semibold text-gray-600">Metode Tanggal</label>
+                                <select id="metode-${inputIndex}" class="border rounded-lg p-2 w-full"></select>
+                            </div>
+                            <div class="space-y-1">
+                                <label class="block text-xs font-semibold text-gray-600">Kategori</label>
+                                <select id="kategori-${inputIndex}" class="border rounded-lg p-2 w-full"></select>
+                            </div>
+                            <div class="space-y-1">
+                                <label id="label-tanggal-dari-${inputIndex}" class="block text-xs font-semibold text-gray-600">Tanggal Dari</label>
+                                <input type="date" id="tanggal-dari-${inputIndex}" class="border rounded-lg p-2 w-full lg:min-w-[160px]">
+                            </div>
+                            <div id="container-tanggal-sampai-${inputIndex}" class="space-y-1">
+                                <label id="label-tanggal-sampai-${inputIndex}" class="block text-xs font-semibold text-gray-600">Tanggal Sampai</label>
+                                <input type="date" id="tanggal-sampai-${inputIndex}" class="border rounded-lg p-2 w-full lg:min-w-[160px]" disabled>
+                            </div>
+                            <div class="space-y-1">
+                                <label class="block text-xs font-semibold text-gray-600">Aksi</label>
+                                <button onclick="removeInput(this)" class="bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 transition w-full lg:w-auto">Hapus</button>
+                            </div>
             `;
 
+            const metodeSelect = inputGroup.querySelector(`#metode-${inputIndex}`);
             const select = inputGroup.querySelector(`#kategori-${inputIndex}`);
             const tanggalDariInput = inputGroup.querySelector(`#tanggal-dari-${inputIndex}`);
             const tanggalSampaiInput = inputGroup.querySelector(`#tanggal-sampai-${inputIndex}`);
+            const labelTanggalDari = inputGroup.querySelector(`#label-tanggal-dari-${inputIndex}`);
+            const containerTanggalSampai = inputGroup.querySelector(`#container-tanggal-sampai-${inputIndex}`);
+
+            [
+                { value: 'baseline_dibuat', label: 'tanggal baseline dibuat' },
+                { value: 'transaksi_baseline', label: 'tanggal tranksaksi baseline' }
+            ].forEach((item) => {
+                const option = document.createElement('option');
+                option.value = item.value;
+                option.textContent = item.label;
+                metodeSelect.appendChild(option);
+            });
 
             // Populate kategori options
             for (const key in queryTemplates) {
@@ -246,8 +352,39 @@
                 select.appendChild(option);
             }
 
+            function syncRowDateFieldsByMethod() {
+                const isTransaksi = metodeSelect.value === 'transaksi_baseline';
+                if (isTransaksi) {
+                    labelTanggalDari.textContent = 'Tanggal Transaksi';
+                    containerTanggalSampai.classList.add('hidden');
+                    tanggalSampaiInput.disabled = true;
+                    tanggalSampaiInput.min = tanggalDariInput.value || '';
+                    tanggalSampaiInput.value = tanggalDariInput.value || '';
+                } else {
+                    labelTanggalDari.textContent = 'Tanggal Dari';
+                    containerTanggalSampai.classList.remove('hidden');
+                    if (tanggalDariInput.value) {
+                        tanggalSampaiInput.disabled = false;
+                        tanggalSampaiInput.min = tanggalDariInput.value;
+                        if (!tanggalSampaiInput.value || tanggalSampaiInput.value < tanggalDariInput.value) {
+                            tanggalSampaiInput.value = tanggalDariInput.value;
+                        }
+                    } else {
+                        tanggalSampaiInput.disabled = true;
+                        tanggalSampaiInput.value = '';
+                        tanggalSampaiInput.min = '';
+                    }
+                }
+            }
+
             // Event listener untuk tanggal dari
             tanggalDariInput.addEventListener('change', function () {
+                if (metodeSelect.value === 'transaksi_baseline') {
+                    syncRowDateFieldsByMethod();
+                    updateQuery();
+                    return;
+                }
+
                 if (this.value) {
                     // Enable tanggal sampai
                     tanggalSampaiInput.disabled = false;
@@ -278,56 +415,104 @@
             select.addEventListener('change', function () {
                 updateQuery();
             });
+            metodeSelect.addEventListener('change', function () {
+                syncRowDateFieldsByMethod();
+                updateQuery();
+            });
 
+            syncRowDateFieldsByMethod();
             inputContainer.appendChild(inputGroup);
             inputIndex++;
             updateQuery();
         }
 
         function removeInput(button) {
-            button.parentElement.remove();
+            const row = button.closest('.input-row');
+            if (row) row.remove();
             updateQuery();
         }
 
         function updateQuery() {
-            const queryGroups = [];
+            const categoryMethodToDates = new Map();
 
             if (inputMode.value === 'excel') {
                 if (excelRows.length > 0 && excelKategori.value) {
-                    queryGroups.push(buildQueryForCategoryDates(excelKategori.value, excelRows));
+                    const method = 'excel_pure';
+                    const key = `${excelKategori.value}::${method}`;
+                    const merged = mergeDatesForMethodFromYmdList(method, excelRows);
+                    categoryMethodToDates.set(key, {
+                        kategori: excelKategori.value,
+                        method,
+                        dates: merged
+                    });
                 }
             } else {
+                const categoryMethodRanges = new Map();
+
                 for (let i = 0; i < inputIndex; i++) {
+                    const metodeInput = document.getElementById(`metode-${i}`);
                     const kategoriInput = document.getElementById(`kategori-${i}`);
                     const tanggalDariInput = document.getElementById(`tanggal-dari-${i}`);
                     const tanggalSampaiInput = document.getElementById(`tanggal-sampai-${i}`);
 
-                    if (kategoriInput && tanggalDariInput && tanggalSampaiInput && tanggalDariInput.value && tanggalSampaiInput.value) {
+                    if (metodeInput && kategoriInput && tanggalDariInput && tanggalSampaiInput && tanggalDariInput.value && tanggalSampaiInput.value) {
+                        const method = metodeInput.value;
                         const kategori = kategoriInput.value;
-                        const dariParts = tanggalDariInput.value.split('-').map(Number);
-                        const sampaiParts = tanggalSampaiInput.value.split('-').map(Number);
-                        const tanggalDari = new Date(dariParts[0], dariParts[1] - 1, dariParts[2]);
-                        const tanggalSampai = new Date(sampaiParts[0], sampaiParts[1] - 1, sampaiParts[2]);
-                        const dateList = [];
-
-                        for (let d = new Date(tanggalDari); d <= tanggalSampai; d.setDate(d.getDate() + 1)) {
-                            dateList.push(formatDateLocal(d));
+                        const key = `${kategori}::${method}`;
+                        if (!categoryMethodRanges.has(key)) {
+                            categoryMethodRanges.set(key, { kategori, method, ranges: [] });
                         }
-
-                        queryGroups.push(buildQueryForCategoryDates(kategori, dateList));
+                        categoryMethodRanges.get(key).ranges.push([tanggalDariInput.value, tanggalSampaiInput.value]);
                     }
                 }
+
+                categoryMethodRanges.forEach((item, key) => {
+                    categoryMethodToDates.set(key, {
+                        kategori: item.kategori,
+                        method: item.method,
+                        dates: mergeDatesForMethodFromRanges(item.method, item.ranges)
+                    });
+                });
             }
 
-            if (queryGroups.length > 0) {
-                const finalQuery = 'BEGIN;\n\n' + queryGroups.join('\n\n\n') + '\n\nCOMMIT;';
-                queryResult.innerText = finalQuery;
-            } else {
+            const bodyParts = [];
+            const categoriesInOrder = new Set();
+
+            categoryMethodToDates.forEach((item) => {
+                if (!item.dates.length) return;
+                categoriesInOrder.add(item.kategori);
+                const methodLabel = item.method === 'transaksi_baseline'
+                    ? 'Tanggal Transaksi Baseline'
+                    : item.method === 'baseline_dibuat'
+                        ? 'Tanggal Baseline Dibuat'
+                        : 'Tanggal Input Excel';
+                bodyParts.push(`-- ${methodLabel}\n` + buildDatedQueriesForCategory(item.kategori, item.dates));
+            });
+
+            if (bodyParts.length === 0) {
                 queryResult.innerText = '';
+                return;
             }
+
+            const defaultParts = Array.from(categoriesInOrder).map((kategori) => {
+                const block = buildDefaultNoDateBlockForCategory(kategori);
+                return `-- Query Default untuk ${kategori} akan mengambil -2 hari dari tanggal eksekusi query.\n${block}`;
+            });
+
+            const finalQuery =
+                'BEGIN;\n\n' +
+                buildSqlHeaderMeta() +
+                '\n\n' +
+                bodyParts.join('\n\n\n') +
+                '\n\n' +
+                defaultParts.join('\n\n') +
+                '\n\nCOMMIT;';
+
+            queryResult.innerText = finalQuery;
         }
 
         inputContainer.addEventListener('input', updateQuery);
+        ticketNumberInput.addEventListener('input', updateQuery);
         inputMode.addEventListener('change', setModeUI);
         excelKategori.addEventListener('change', updateQuery);
 
@@ -418,7 +603,7 @@
         }
 
         function exportSQL() {
-            const ticket = document.getElementById('ticket-number').value.trim();
+            const ticket = ticketNumberInput.value.trim();
 
             if (!ticket) {
                 alert('Nomor tiket wajib diisi!');
@@ -495,6 +680,7 @@
         populateCategorySelect(excelKategori);
         setModeUI();
         addInput();
+        updateQuery();
     </script>
 
 </body>
