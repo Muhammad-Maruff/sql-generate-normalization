@@ -19,7 +19,6 @@
 
         <div class="mb-6">
             <h1 class="text-4xl font-extrabold tracking-tight text-gray-900">SQL Generator</h1>
-            <p class="mt-2 text-sm text-gray-600">Craft precision queries with the Logic Atelier workspace.</p>
         </div>
 
         <div class="rounded-3xl border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur-sm lg:p-6">
@@ -59,6 +58,13 @@
             <div>
                 <label class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">Kategori untuk semua tanggal Excel</label>
                 <select id="excel-kategori" class="w-full rounded-xl border border-gray-200 bg-[#f1f3f9] p-2.5 text-sm outline-none focus:border-indigo-400"></select>
+            </div>
+            <div>
+                <label class="mb-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">Metode Tanggal Excel</label>
+                <select id="excel-metode" class="w-full rounded-xl border border-gray-200 bg-[#f1f3f9] p-2.5 text-sm outline-none focus:border-indigo-400">
+                    <option value="excel_pure">Tanggal Satuan (sesuai input file)</option>
+                    <option value="transaksi_baseline">Tanggal Transaksi (otomatis H-1, H, H+1)</option>
+                </select>
             </div>
             <div class="flex flex-wrap gap-2">
                 <button id="download-template-btn"
@@ -102,8 +108,6 @@
         </div>
 
         <footer class="mt-8 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
-            <p class="font-semibold text-indigo-700">Logic Atelier</p>
-            <p>&copy; 2026 Logic Atelier. Precision-crafted SQL tools.</p>
         </footer>
     </div>
 
@@ -172,6 +176,7 @@
         const manualSection = document.getElementById('manual-section');
         const excelSection = document.getElementById('excel-section');
         const excelKategori = document.getElementById('excel-kategori');
+        const excelMetode = document.getElementById('excel-metode');
         const excelFileInput = document.getElementById('excel-file');
         const excelStatus = document.getElementById('excel-status');
         const downloadTemplateBtn = document.getElementById('download-template-btn');
@@ -252,19 +257,72 @@
 
         function buildSqlHeaderMeta() {
             const ticket = ticketNumberInput.value.trim();
+            const dataMetrics = getCurrentDataMetrics();
             const lines = [
                 '-- SQL Generate Normalization',
             ];
             if (ticket) lines.push(`-- ticket: ${ticket}`);
-            lines.push(`-- jumlah data: ${getCurrentDataCount()}`);
+            lines.push(`-- jumlah data: ${dataMetrics.totalCount}`);
             return lines.join('\n');
         }
 
-        function getCurrentDataCount() {
+        function getCurrentDataMetrics() {
+            const categoryMethodToDates = buildCategoryMethodToDates();
+            let tanggalCount = 0;
+            categoryMethodToDates.forEach((item) => {
+                tanggalCount += item.dates.length;
+            });
+
+            // Satu tambahan untuk menyertakan blok query default secara keseluruhan (bukan per baris SELECT).
+            const totalCount = tanggalCount + (tanggalCount > 0 ? 1 : 0);
+
+            return { tanggalCount, totalCount };
+        }
+
+        function buildCategoryMethodToDates() {
+            const categoryMethodToDates = new Map();
+
             if (inputMode.value === 'excel') {
-                return excelRows.length;
+                if (excelRows.length > 0 && excelKategori.value) {
+                    const method = excelMetode.value || 'excel_pure';
+                    const key = `${excelKategori.value}::${method}`;
+                    const merged = mergeDatesForMethodFromYmdList(method, excelRows);
+                    categoryMethodToDates.set(key, {
+                        kategori: excelKategori.value,
+                        method,
+                        dates: merged
+                    });
+                }
+                return categoryMethodToDates;
             }
-            return inputContainer.querySelectorAll('.input-row').length;
+
+            const categoryMethodRanges = new Map();
+            for (let i = 0; i < inputIndex; i++) {
+                const metodeInput = document.getElementById(`metode-${i}`);
+                const kategoriInput = document.getElementById(`kategori-${i}`);
+                const tanggalDariInput = document.getElementById(`tanggal-dari-${i}`);
+                const tanggalSampaiInput = document.getElementById(`tanggal-sampai-${i}`);
+
+                if (metodeInput && kategoriInput && tanggalDariInput && tanggalSampaiInput && tanggalDariInput.value && tanggalSampaiInput.value) {
+                    const method = metodeInput.value;
+                    const kategori = kategoriInput.value;
+                    const key = `${kategori}::${method}`;
+                    if (!categoryMethodRanges.has(key)) {
+                        categoryMethodRanges.set(key, { kategori, method, ranges: [] });
+                    }
+                    categoryMethodRanges.get(key).ranges.push([tanggalDariInput.value, tanggalSampaiInput.value]);
+                }
+            }
+
+            categoryMethodRanges.forEach((item, key) => {
+                categoryMethodToDates.set(key, {
+                    kategori: item.kategori,
+                    method: item.method,
+                    dates: mergeDatesForMethodFromRanges(item.method, item.ranges)
+                });
+            });
+
+            return categoryMethodToDates;
         }
 
         function getHistoryItems() {
@@ -359,6 +417,7 @@
                 ticket: ticketNumberInput.value.trim(),
                 mode,
                 excelKategori: excelKategori.value || '',
+                excelMetode: excelMetode.value || 'excel_pure',
                 excelRows: [...excelRows],
                 manualRows,
                 query: queryResult.innerText,
@@ -370,6 +429,7 @@
             return JSON.stringify({
                 mode: snapshot.mode,
                 excelKategori: snapshot.excelKategori,
+                excelMetode: snapshot.excelMetode,
                 excelRows: snapshot.excelRows,
                 manualRows: snapshot.manualRows,
                 categories: snapshot.categories
@@ -442,6 +502,7 @@
             setModeUI();
 
             excelKategori.value = selected.excelKategori || '';
+            excelMetode.value = selected.excelMetode || 'excel_pure';
             excelRows = Array.isArray(selected.excelRows) ? [...selected.excelRows] : [];
             excelStatus.textContent = selected.mode === 'excel'
                 ? `Data riwayat dimuat. Jumlah tanggal: ${excelRows.length}`
@@ -690,47 +751,7 @@
         }
 
         function updateQuery() {
-            const categoryMethodToDates = new Map();
-
-            if (inputMode.value === 'excel') {
-                if (excelRows.length > 0 && excelKategori.value) {
-                    const method = 'excel_pure';
-                    const key = `${excelKategori.value}::${method}`;
-                    const merged = mergeDatesForMethodFromYmdList(method, excelRows);
-                    categoryMethodToDates.set(key, {
-                        kategori: excelKategori.value,
-                        method,
-                        dates: merged
-                    });
-                }
-            } else {
-                const categoryMethodRanges = new Map();
-
-                for (let i = 0; i < inputIndex; i++) {
-                    const metodeInput = document.getElementById(`metode-${i}`);
-                    const kategoriInput = document.getElementById(`kategori-${i}`);
-                    const tanggalDariInput = document.getElementById(`tanggal-dari-${i}`);
-                    const tanggalSampaiInput = document.getElementById(`tanggal-sampai-${i}`);
-
-                    if (metodeInput && kategoriInput && tanggalDariInput && tanggalSampaiInput && tanggalDariInput.value && tanggalSampaiInput.value) {
-                        const method = metodeInput.value;
-                        const kategori = kategoriInput.value;
-                        const key = `${kategori}::${method}`;
-                        if (!categoryMethodRanges.has(key)) {
-                            categoryMethodRanges.set(key, { kategori, method, ranges: [] });
-                        }
-                        categoryMethodRanges.get(key).ranges.push([tanggalDariInput.value, tanggalSampaiInput.value]);
-                    }
-                }
-
-                categoryMethodRanges.forEach((item, key) => {
-                    categoryMethodToDates.set(key, {
-                        kategori: item.kategori,
-                        method: item.method,
-                        dates: mergeDatesForMethodFromRanges(item.method, item.ranges)
-                    });
-                });
-            }
+            const categoryMethodToDates = buildCategoryMethodToDates();
 
             const bodyParts = [];
             const categoriesInOrder = new Set();
@@ -772,6 +793,7 @@
         ticketNumberInput.addEventListener('input', updateQuery);
         inputMode.addEventListener('change', setModeUI);
         excelKategori.addEventListener('change', updateQuery);
+        excelMetode.addEventListener('change', updateQuery);
         clearHistoryBtn.addEventListener('click', function () {
             const ok = confirm('Hapus semua riwayat generate?');
             if (!ok) return;
