@@ -79,8 +79,8 @@
         <div class="mb-5 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
             <button onclick="addInput()"
                 class="rounded-xl border border-indigo-100 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50">+ Tambah Data</button>
-            <button type="button" onclick="updateQuery()"
-                class="rounded-2xl bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-indigo-700">Generate Code</button>
+            <!-- <button type="button" onclick="updateQuery()"
+                class="rounded-2xl bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-indigo-700">Generate Code</button> -->
         </div>
 
         <div class="mb-2 flex items-center justify-between gap-3">
@@ -126,7 +126,8 @@
             "pembangkit": "Pembangkit",
             "sktt": "SKTT",
             "sutt": "SUTT",
-            "garduinduk": "Gardu-Induk"
+            "garduinduk": "Gardu-Induk",
+            "sewakendaraan": "Sewa-Kendaraan"
         };
 
         const queryTemplates = {
@@ -142,6 +143,7 @@
                 "SELECT * FROM public.dp_fn_generatepilingbatchnormalization({date});",
                 "SELECT * FROM public.dp_fn_generategroundtransmisibatchnormalization({date});",
                 "SELECT * FROM public.dp_fn_generatetransportbatch({date});",
+                "SELECT * FROM dp_fn_generatevehiclerentalbatchnormalization({date});",
             ],
             "mdumtu": [
                 "SELECT * FROM public.dp_fn_generatemdumtubatchnormalization({date});",
@@ -168,6 +170,9 @@
                 "SELECT * FROM public.dp_fn_generategarduindukbatchnormalization({date});",
                 "SELECT * FROM public.dp_fn_generatetransportcatalogbatchnormalization({date});",
                 "SELECT * FROM public.dp_fn_generatepricecatalogbatchnormalization({date});"
+            ],
+            "sewakendaraan": [
+                "SELECT * FROM dp_fn_generatevehiclerentalbatchnormalization({date});"
             ]
         };
 
